@@ -95,7 +95,6 @@ Spring Boot 2.7 + JDK 8
 chain-cert/
 ├── README.md
 ├── .env.example              # 环境变量模板
-├── SECURITY.md               # 公共仓库安全约定
 ├── contracts/                # Solidity 合约源码
 │   ├── ChainSIP.sol
 │   └── ChainSIPTransfer.sol
