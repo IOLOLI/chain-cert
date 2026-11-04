@@ -67,7 +67,7 @@
         </el-form>
 
         <div class="demo" data-rise style="--d: 350ms">
-          <p class="demo-head">演示账号<span class="demo-tip">点一行即可填入</span></p>
+          <p class="demo-head">管理员账号<span class="demo-tip">点一行即可填入</span></p>
           <button v-for="item in demoAccounts" :key="item.username" class="demo-row" type="button"
             @click="fill(item)">
             <span class="demo-user">{{ item.username }}</span>
@@ -125,15 +125,9 @@ const identities = [
   { left: '城市基金池 + 在途统筹', right: '职工统筹权益' }
 ]
 
-/* ---------------- 演示账号（本地测试链真实存在，密码仅用于演示） ---------------- */
+/* ---------------- 管理员账号（仅保留平台管理员，其他账号由管理员创建） ---------------- */
 const demoAccounts = [
-  { username: 'admin', password: 'ChangeMe_123456', label: '平台管理员' },
-  { username: 'bureau_demo', password: 'ChangeMe_123456', label: '社保经办机构（示例）' },
-  { username: 'sponsor_demo', password: 'ChangeMe_123456', label: '缴费单位' },
-  { username: 'employee_demo', password: 'ChangeMe_123456', label: '参保职工' },
-  { username: 'bureau_demo2', password: 'ChangeMe_123456', label: '社保经办机构（示例2）' },
-  { username: 'sponsor_demo2', password: 'ChangeMe_123456', label: '缴费单位（示例2）' },
-  { username: 'regulator_demo', password: 'ChangeMe_123456', label: '监管账户' }
+  { username: 'admin', password: 'ChangeMe_123456', label: '平台管理员' }
 ]
 
 function fill(item) {
