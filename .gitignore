@@ -84,3 +84,8 @@ backend/sdk/conf/*.crt
 .env
 .env.*
 !.env.example
+
+# 本地开发辅助目录（不随公共仓库发布）
+/deploy/
+/scripts/
+/docs/

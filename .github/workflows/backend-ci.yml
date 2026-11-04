@@ -1,6 +1,6 @@
 # ChainSIP 后端 CI/CD 参考流水线（GitHub Actions）
 #
-# 平台无关的阶段划分见 docs/testing-strategy.md §9.1。
+# 阶段划分见下方 job 注释。
 # 移植点：
 #   - Gitee  ：workflow 语法基本一致；若无缓存动作，可改用自托管 runner + 本地 ~/.m2，
 #              并把 services.mysql 换成 runner 上的常驻 MySQL。
@@ -161,23 +161,25 @@ jobs:
         working-directory: backend
         run: mvn -B -DskipTests package
 
-      - name: '阶段7 冒烟 E2E（scripts/test_api.py）'
+      - name: '阶段7 启动冒烟'
         env:
           CHAINSIP_DB_HOST: 127.0.0.1
           CHAINSIP_DB_PORT: '3306'
           CHAINSIP_DB_PASSWORD: 'change-me'
-          # 链未就绪时后端仍能启动，链相关接口返回 503，脚本需容忍该分支
           CHAINSIP_CHAIN_ENABLED: 'true'
         run: |
           cd backend
           nohup java -jar target/chainsip-backend.jar > app.log 2>&1 &
           for i in $(seq 1 60); do
-            curl -sf http://127.0.0.1:8080/api/chain/status > /dev/null && break
+            if curl -sf http://127.0.0.1:8080/api/public/health > /dev/null; then
+              echo "健康检查通过"
+              exit 0
+            fi
             sleep 3
           done
-          python ../scripts/test_api.py http://127.0.0.1:8080 || {
-            echo "E2E 失败，打印后端日志尾部"; tail -100 app.log; exit 1; }
-
+          echo "健康检查失败，打印后端日志尾部"
+          tail -100 app.log
+          exit 1
       - name: '阶段8 归档制品'
         uses: actions/upload-artifact@v4
         with:
