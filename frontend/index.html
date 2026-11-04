@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ChainSIP · 区块链养老保险平台</title>
+    <script>
+      // 首屏防闪：在样式生效前根据本地偏好 / 系统偏好挂上 html.dark，
+      // 避免深色用户看到一帧白底。逻辑与 stores/theme.js 保持一致。
+      ;(function () {
+        try {
+          var mode = localStorage.getItem('chainsip-theme') || 'system'
+          var dark =
+            mode === 'dark' ||
+            (mode !== 'light' &&
+              window.matchMedia &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches)
+          if (dark) document.documentElement.classList.add('dark')
+        } catch (e) {}
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

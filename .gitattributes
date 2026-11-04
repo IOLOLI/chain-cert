@@ -1,0 +1,4 @@
+
+# 部署脚本必须在 Linux 上直接可执行（不能是 CRLF）
+*.sh text eol=lf
+deploy/** text eol=lf

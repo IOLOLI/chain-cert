@@ -1,0 +1,143 @@
+server:
+  port: 8080
+  # 接口返回的基本都是 JSON（事件列表、机构列表单次可达上百 KB），开压缩对线上/答辩演示都有感知
+  compression:
+    enabled: true
+    mime-types: application/json,application/javascript,text/css,text/html,text/plain,image/svg+xml
+    # 小于 2KB 的响应压缩收益抵不过 CPU 开销
+    min-response-size: 2048
+  # 停服时先停止接收新请求、再等在途请求跑完，避免上链交易做到一半被强杀
+  shutdown: graceful
+
+spring:
+  application:
+    name: chainsip-backend
+  # 唯一数据源：MySQL 8（本机已验证 8.0.41）。项目已移除 H2，不再需要 profile 切换。
+  # 建库（只需一次）：
+  #   CREATE DATABASE chainsip DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+  # 账号密码支持环境变量覆盖，建议不要把生产密码写进仓库：
+  #   CHAINSIP_DB_HOST / CHAINSIP_DB_PORT / CHAINSIP_DB_NAME / CHAINSIP_DB_USER / CHAINSIP_DB_PASSWORD
+  datasource:
+    url: jdbc:mysql://${CHAINSIP_DB_HOST:127.0.0.1}:${CHAINSIP_DB_PORT:3306}/${CHAINSIP_DB_NAME:chainsip}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${CHAINSIP_DB_USER:chainsip}
+    password: ${CHAINSIP_DB_PASSWORD:change-me}
+    # 连接池：默认 HikariCP 的 10 个连接对"链上交易 + 列表查询"混跑的场景偏紧
+    # （一次上链请求要占住连接做发交易 + 写留痕 + 写事件索引），显式给大一点并加上连接校验
+    hikari:
+      pool-name: chainsip-hikari
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 10000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      connection-test-query: SELECT 1
+  # Redis：本机 Docker 容器 chainsip-redis（redis:7-alpine）映射在 127.0.0.1:6379，无密码。
+  # 默认使用 db1：db0 已被同机的 同机其他项目 使用，隔离后互不影响。
+  # Redis 用作缓存、限流计数与幂等键；连接失败不会阻断启动，缓存跳过、限流/幂等自动放行。
+  #   CHAINSIP_REDIS_HOST / CHAINSIP_REDIS_PORT / CHAINSIP_REDIS_PASSWORD / CHAINSIP_REDIS_DATABASE
+  redis:
+    host: ${CHAINSIP_REDIS_HOST:127.0.0.1}
+    port: ${CHAINSIP_REDIS_PORT:6379}
+    password: ${CHAINSIP_REDIS_PASSWORD:}
+    database: ${CHAINSIP_REDIS_DATABASE:1}
+    timeout: 3000ms
+    connect-timeout: 1000ms
+    lettuce:
+      shutdown-timeout: 200ms
+      pool:
+        enabled: true
+        max-active: 16
+        max-idle: 8
+        min-idle: 1
+        max-wait: 1000ms
+  sql:
+    init:
+      # 启动时执行 schema.sql（全部为 create table if not exists，幂等）
+      mode: always
+      schema-locations: classpath:schema.sql
+  jackson:
+    default-property-inclusion: non_null
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui/index.html
+
+chainsip:
+  # 空库引导管理员：仅首次启动创建一次，生产务必用环境变量覆盖。
+  bootstrap:
+    admin-username: ${CHAINSIP_BOOTSTRAP_ADMIN_USERNAME:admin}
+    admin-password: ${CHAINSIP_BOOTSTRAP_ADMIN_PASSWORD:ChangeMe_123456}
+  jwt:
+    # 生产必须替换；长度至少 32 字节，否则 jjwt 会拒绝签发
+    secret: "chainsip-dev-jwt-secret-change-me-before-production-0123456789"
+    header: Authorization
+    prefix: "Bearer "
+    expire-minutes: 720
+  # Redis 限流：Redis 不可用时自动放行，不阻断业务。
+  # 辖区扫描 / 监管大屏 / 链上索引这类一次请求打很多次链的接口使用单独的低额度。
+  rate-limit:
+    enabled: true
+    api-per-minute: 300
+    expensive-per-minute: 60
+    login-per-minute: 10
+  crypto:
+    # 机构私钥落库加密的主密钥（AES-256-GCM）。生产改为环境变量 CHAINSIP_CRYPTO_MASTER_KEY 注入。
+    master-key: "chainsip-dev-master-key-change-me-before-production"
+    # 可选：ADMIN 机构链账户私钥（64 位十六进制，可带 0x）。填了它，后端每次启动都会把它写为 code=ADMIN 的机构密钥。
+    # 用途：用 FISCO 控制台 / WeBASE 部署合约时，把那个"部署账户"的私钥填在这里 ——
+    #       链上第一个 ADMIN 就是该部署账户，于是链上链下是同一个 ADMIN，不需要再 addAdmin 交接。
+    # 建议用环境变量注入，不要写进仓库：CHAINSIP_ADMIN_PRIVATE_KEY
+    admin-private-key: "${CHAINSIP_ADMIN_PRIVATE_KEY:}"
+    # 是否开放"联调辅助"接口 POST /api/auth/demo/sign（用请求自带的私钥签名，不涉及服务端密钥）。
+    # 定位：仅手工联调（curl / Swagger）用，前后端都没有业务调用方；生产建议置 false。
+    allow-demo-sign: true
+  cors:
+    # 允许的跨域来源（本地前端联调默认 *）。生产必须收紧为具体域名，禁止"任意来源 + 允许凭据"。
+    # 支持逗号分隔，如 http://a.com,http://b.com；环境变量 CHAINSIP_CORS_ALLOWED_ORIGIN_PATTERNS 覆盖。
+    allowed-origin-patterns: ["*"]
+  audit:
+    # 登录审计 IP：默认 false 直接用 remoteAddr，避免任意客户端伪造 X-Forwarded-For。
+    # 仅在明确部署于可信反向代理之后才置 true 采信转发头。
+    trust-proxy-headers: false
+  chain:
+    # 起链前保持 false 也能正常启动，链相关接口会返回 503 与明确的排查提示
+    enabled: true
+    # FISCO BCOS 2.x Java SDK 的配置文件（文件系统路径），证书目录在 [cryptoMaterial] certPath 指定
+    sdk-config-file: "${CHAINSIP_SDK_CONFIG:./sdk/config.toml}"
+    # 群组 ID：2.x 不在 config.toml 里配群组，而是 BcosSDK.getClient(groupId)，默认群组编号为 1
+    group-id: "${CHAINSIP_GROUP_ID:1}"
+    # 节点 channel 端口（仅用于状态展示与排查提示；真正连接用的 peers 写在 sdk/config.toml 里）
+    # 部署到服务器时用 CHAINSIP_CHAIN_ENDPOINT 覆盖即可（单节点字符串，逗号分隔可写多个）
+    peers:
+      - "${CHAINSIP_CHAIN_ENDPOINT:127.0.0.1:20200}"
+    # ABI 资源目录（classpath），启动时导出到临时目录供 SDK 的文件式加载器使用
+    abi-resource-dir: "abi"
+    # 合约地址：默认留空。合约由用户在 WeBASE（或 contracts 目录下的部署工具）部署完成后，
+    # 把两个地址填到这里（或用环境变量注入）。未配置时链相关接口返回 503 并提示
+    # "ChainSIP 合约地址未配置（chainsip.chain.contracts.core）"，应用本身照常启动。
+    contracts:
+      core: "${CHAINSIP_CORE_ADDRESS:}"
+      transfer: "${CHAINSIP_TRANSFER_ADDRESS:}"
+    # 请求超时（毫秒）
+    timeout-millis: 15000
+
+logging:
+  level:
+    root: INFO
+    # 默认 INFO：DEBUG 会把每次链调用与 SQL 都打出来，长时间跑会拖慢启动后的首次响应
+    # 需要排查时用环境变量临时打开：CHAINSIP_LOG_LEVEL=DEBUG
+    com.chainsip: ${CHAINSIP_LOG_LEVEL:INFO}
+    org.fisco.bcos.sdk: WARN

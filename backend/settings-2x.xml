@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Maven settings for the FISCO BCOS 2.x build.
+
+  Why this file exists:
+    * The offline repository at ~/maven-offline-repository/ already holds most 2.x SDK artifacts,
+      but it is READ-ONLY and it is NOT the local repository, so it is attached as a
+      regular <repository> instead of being used as -Dmaven.repo.local.
+    * Writable local repository goes to ~/.m2/repository via
+        -Dmaven.repo.local=~/.m2/repository
+      so nothing is ever written back into the read-only offline repo.
+    * A few 2.x artifacts (e.g. the SDK 2.11.0 jar itself) are missing from the
+      offline repo, so Aliyun's public mirror is kept as the fallback.
+
+  Usage:
+    mvn -s settings-2x.xml -Dmaven.repo.local=~/.m2/repository clean package
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+
+  <!--
+    Pinned explicitly: the machine-level settings.xml (Maven conf dir) points the
+    local repository at <MAVEN_HOME>\...\repo which is NOT writable, and
+    the user-level ~/.m2/settings.xml points it at the read-only ~/maven-offline-repository.
+    Pinning it here guarantees every run of this build writes to ~/.m2/repository.
+    -Dmaven.repo.local=~/.m2/repository on the command line overrides this anyway.
+  -->
+  <localRepository>${user.home}/.m2/repository</localRepository>
+
+  <!--
+    Do NOT let a mirrorOf="*" mirror swallow the file:/// offline repository:
+    a mirror of the offline repo would send every lookup to the network and
+    silently defeat the point of having it. Only the network repos are mirrored.
+  -->
+  <mirrors>
+    <mirror>
+      <id>aliyun-public-mirror</id>
+      <mirrorOf>aliyun-public,central</mirrorOf>
+      <name>Aliyun public mirror</name>
+      <url>https://maven.aliyun.com/repository/public</url>
+    </mirror>
+  </mirrors>
+
+  <profiles>
+    <profile>
+      <id>local-fisco</id>
+      <repositories>
+        <!-- Read-only offline repository (file://${user.home}/maven-offline-repository) -->
+        <repository>
+          <id>local-fisco</id>
+          <name>Offline repository at ~/maven-offline-repository</name>
+          <url>file://${user.home}/maven-offline-repository</url>
+          <releases>
+            <enabled>true</enabled>
+            <updatePolicy>never</updatePolicy>
+            <checksumPolicy>warn</checksumPolicy>
+          </releases>
+          <snapshots>
+            <enabled>true</enabled>
+            <updatePolicy>never</updatePolicy>
+            <checksumPolicy>warn</checksumPolicy>
+          </snapshots>
+        </repository>
+        <!-- Public fallback for artifacts the offline repo is missing -->
+        <repository>
+          <id>aliyun-public</id>
+          <name>Aliyun public</name>
+          <url>https://maven.aliyun.com/repository/public</url>
+          <releases>
+            <enabled>true</enabled>
+          </releases>
+          <snapshots>
+            <enabled>false</enabled>
+          </snapshots>
+        </repository>
+      </repositories>
+      <pluginRepositories>
+        <pluginRepository>
+          <id>local-fisco</id>
+          <name>Offline repository at ~/maven-offline-repository</name>
+          <url>file://${user.home}/maven-offline-repository</url>
+          <releases>
+            <enabled>true</enabled>
+            <updatePolicy>never</updatePolicy>
+          </releases>
+          <snapshots>
+            <enabled>true</enabled>
+            <updatePolicy>never</updatePolicy>
+          </snapshots>
+        </pluginRepository>
+        <pluginRepository>
+          <id>aliyun-public</id>
+          <name>Aliyun public</name>
+          <url>https://maven.aliyun.com/repository/public</url>
+          <releases>
+            <enabled>true</enabled>
+          </releases>
+          <snapshots>
+            <enabled>false</enabled>
+          </snapshots>
+        </pluginRepository>
+      </pluginRepositories>
+    </profile>
+  </profiles>
+
+  <activeProfiles>
+    <activeProfile>local-fisco</activeProfile>
+  </activeProfiles>
+</settings>

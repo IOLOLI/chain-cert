@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>2.7.18</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.chainsip</groupId>
+    <artifactId>chainsip-backend</artifactId>
+    <version>1.0.0</version>
+    <name>chainsip-backend</name>
+    <description>ChainSIP 区块链养老保险平台 —— 后端服务（Spring Boot 2.7 + FISCO BCOS 2.x Java SDK）</description>
+
+    <properties>
+        <java.version>1.8</java.version>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <mybatis-plus.version>3.5.3.1</mybatis-plus.version>
+        <!-- FISCO BCOS Java SDK version. This is the SDK version line, which is
+             INDEPENDENT from the chain version: the chain runs FISCO BCOS 2.11.0,
+             while the matching 2.x SDK line tops out at 2.10.1. There is no
+             published "Java SDK 2.11.0": Maven Central and the Aliyun mirror
+             both stop at 2.10.1 for 2.x, so 2.11.0 is a chain version only.
+             Change this one property to move the SDK version (2.8.0 / 2.9.1 /
+             2.10.1 are all present in the offline repo at ~/maven-offline-repository). -->
+        <fisco-sdk.version>2.10.1</fisco-sdk.version>
+        <!-- 与 2.x SDK 传递进来的 bcprov-jdk18on 版本保持一致（SSL 初始化需要 bcpkix 的 PEMParser） -->
+        <bouncycastle.version>1.77</bouncycastle.version>
+        <jjwt.version>0.11.5</jjwt.version>
+        <springdoc.version>1.6.15</springdoc.version>
+    </properties>
+
+    <dependencies>
+        <!-- Web / 参数校验 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- 持久层：MyBatis-Plus + MySQL 8（唯一数据源；H2 已移除，不再支持无库启动） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-boot-starter</artifactId>
+            <version>${mybatis-plus.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Redis：缓存与多实例共享状态。本机使用 Docker 里的 redis:7-alpine（127.0.0.1:6379）。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <!-- Lettuce 连接池依赖；不配连接池时 Lettuce 会退化为单连接，够用但没有主动回收。 -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-pool2</artifactId>
+        </dependency>
+
+        <!-- JWT：0.11.x 自带 Base64 实现，不依赖已被 JDK 11+ 移除的 JAXB，
+             因此在 JDK 8 / 11 / 17 / 21 上都能跑（旧版 0.9.x 在 JDK 9+ 会抛
+             NoClassDefFoundError: javax/xml/bind/DatatypeConverter） -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>${jjwt.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- FISCO BCOS 2.x Java SDK：内含 Windows/Linux/macOS 原生库（WeDPR libffi），可在本机直接运行 -->
+        <dependency>
+            <groupId>org.fisco-bcos.java-sdk</groupId>
+            <artifactId>fisco-bcos-java-sdk</artifactId>
+            <version>${fisco-sdk.version}</version>
+        </dependency>
+
+        <!--
+          2.x SDK 的 SSL 初始化（SslContextInitializer 读 sdk.crt/sdk.key）依赖 org.bouncycastle.openssl.PEMParser，
+          但 SDK 的 POM 只传递了 bcprov-jdk18on、**没有带 bcpkix**。缺了它会在 BcosSDK.build 时抛
+          ClassNotFoundException: org.bouncycastle.openssl.PEMParser，并被 SDK 包装成含糊的
+          "parse Config ... failed, error info:"（信息为空），极难定位 —— 所以这里显式声明，版本与 bcprov 对齐。
+        -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpkix-jdk18on</artifactId>
+            <version>${bouncycastle.version}</version>
+        </dependency>
+
+        <!-- 接口文档 -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-ui</artifactId>
+            <version>${springdoc.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>chainsip-backend</finalName>
+        <plugins>
+            <!-- JDK 版本护栏：Spring Boot 2.7 / Spring 5.3 与 Lombok 1.18.x 都不支持 JDK 22+，
+                 与其让人看到 "Unsupported class file major version 68" 这种晦涩报错，
+                 不如在这里直接说清该用哪个 JDK -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.4.1</version>
+                <executions>
+                    <execution>
+                        <id>enforce-jdk-version</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireJavaVersion>
+                                    <version>[1.8,22)</version>
+                                    <message>本项目基于 Spring Boot 2.7 + FISCO BCOS Java SDK 2.10，请使用 JDK 8 / 11 / 17 / 21（JDK 22 及以上不被 Spring 5.3 与 Lombok 支持）。</message>
+                                </requireJavaVersion>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- 在本 JVM 内跑测试，避免环境对子进程管道的限制 -->
+                    <forkCount>0</forkCount>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

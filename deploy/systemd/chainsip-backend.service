@@ -1,0 +1,36 @@
+[Unit]
+Description=ChainSIP backend (Spring Boot, JDK 8)
+Documentation=file:///opt/chainsip/docs/DEPLOY-ECS.md
+# 链要先进群组，后端启动时就初始化 SDK 并探测合约，链没起会导致首次请求 503
+After=network-online.target mysqld.service mysql.service fisco-chain.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=chainsip
+Group=chainsip
+WorkingDirectory=/opt/chainsip/backend
+
+# 密码与密钥放这里，不要写进 jar 或仓库
+EnvironmentFile=/etc/chainsip/backend.env
+Environment=JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai
+
+# 2C4G 的机器给 1.5G 堆足够；5 个链节点约占 1.2G，MySQL 约 0.4G
+ExecStart=/usr/bin/java -Xms512m -Xmx1536m -XX:+UseG1GC \
+          -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/var/log/chainsip \
+          -jar /opt/chainsip/backend/chainsip-backend.jar
+
+# 优雅停机：Spring 的 server.shutdown=graceful 会等在途上链交易跑完
+KillSignal=SIGTERM
+TimeoutStopSec=45
+SuccessExitStatus=143
+
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+
+StandardOutput=append:/var/log/chainsip/backend.log
+StandardError=append:/var/log/chainsip/backend.log
+
+[Install]
+WantedBy=multi-user.target

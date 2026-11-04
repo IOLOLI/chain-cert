@@ -1,0 +1,215 @@
+# ChainSIP 后端 CI/CD 参考流水线（GitHub Actions）
+#
+# 平台无关的阶段划分见 docs/testing-strategy.md §9.1。
+# 移植点：
+#   - Gitee  ：workflow 语法基本一致；若无缓存动作，可改用自托管 runner + 本地 ~/.m2，
+#              并把 services.mysql 换成 runner 上的常驻 MySQL。
+#   - GitLab ：每个 job 映射为 stage；services: [mysql:8.0]；
+#              cache: key: files: [backend/pom.xml], paths: [.m2/repository]
+#   - Jenkins：stage 一一对应；services 换成 docker sidecar 或外部 MySQL 实例。
+name: backend-ci
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      deploy_env:
+        description: '部署环境（prod 需手动触发）'
+        required: false
+        default: 'none'
+
+env:
+  MAVEN_OPTS: '-Dmaven.repo.local=.m2/repository -Xmx1g'
+  JAVA_DIST: 'temurin'
+
+jobs:
+  # ---------------------------------------------------------------- 阶段 1-4
+  build-test:
+    name: '编译 + 单元 + 切片 + 集成'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 8 是生产基线；17 用于验证未来可迁移性
+        jdk: ['8', '17']
+    services:
+      # CI 里用 service 容器比 Testcontainers 更稳（避免 Docker-in-Docker）
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: 'change-me'
+          MYSQL_DATABASE: chainsip
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 'JDK ${{ matrix.jdk }}'
+        uses: actions/setup-java@v4
+        with:
+          distribution: ${{ env.JAVA_DIST }}
+          java-version: ${{ matrix.jdk }}
+
+      - name: 'Maven 缓存'
+        uses: actions/cache@v4
+        with:
+          path: .m2/repository
+          key: ${{ runner.os }}-m2-${{ hashFiles('backend/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2-
+
+      - name: '阶段1 JDK 护栏'
+        working-directory: backend
+        run: mvn -B enforcer:enforce
+
+      - name: '阶段2 编译'
+        working-directory: backend
+        run: mvn -B -DskipTests compile
+
+      - name: '阶段3 单元 + 切片（L1/L2）'
+        working-directory: backend
+        run: mvn -B test
+
+      - name: '阶段4 集成（L3）+ 覆盖率门禁'
+        working-directory: backend
+        env:
+          # 集成测试直连 service 容器里的 MySQL，无需 Docker
+          CHAINSIP_DB_HOST: 127.0.0.1
+          CHAINSIP_DB_PORT: '3306'
+          CHAINSIP_DB_NAME: chainsip
+          CHAINSIP_DB_USER: chainsip
+          CHAINSIP_DB_PASSWORD: 'change-me'
+          TESTCONTAINERS_ENABLED: 'false'
+        run: mvn -B verify -Djacoco.skip.check=${{ matrix.jdk != '8' }}
+        # 覆盖率门禁只在 JDK8 基线上卡，避免矩阵重复判定
+
+      - name: '归档测试与覆盖率报告'
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-jdk${{ matrix.jdk }}
+          retention-days: 30
+          path: |
+            backend/target/surefire-reports/**
+            backend/target/failsafe-reports/**
+            backend/target/site/jacoco/**
+
+  # ---------------------------------------------------------------- 阶段 5
+  chain-integration:
+    name: '链集成测试（L4）'
+    runs-on: ubuntu-latest
+    needs: build-test
+    # 没有链环境时整体跳过：仓库变量 CHAIN_CI_ENABLED=true 才跑
+    if: ${{ vars.CHAIN_CI_ENABLED == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '8'
+      - name: '等待链就绪'
+        run: |
+          for i in $(seq 1 30); do
+            (echo > /dev/tcp/${{ vars.CHAIN_HOST || '<CHAIN_HOST>' }}/20200) 2>/dev/null \
+              && echo "chain reachable" && exit 0
+            sleep 5
+          done
+          echo "链不可达，跳过 L4"; exit 1
+      - name: '部署合约（幂等：已部署则跳过）'
+        working-directory: backend
+        run: mvn -B test -Pchain -Dtest=DeployContractsTest -DfailIfNoSpecifiedTests=false
+      - name: '链集成 + 对账恒等式'
+        working-directory: backend
+        env:
+          CHAINSIP_DB_HOST: ${{ vars.DB_HOST }}
+          CHAINSIP_DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: mvn -B verify -Pchain
+
+  # ---------------------------------------------------------------- 阶段 6-8
+  package:
+    name: '打包 + 冒烟 E2E + 制品'
+    runs-on: ubuntu-latest
+    needs: [build-test]
+    if: always() && needs.build-test.result == 'success'
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: 'change-me'
+          MYSQL_DATABASE: chainsip
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: 'temurin', java-version: '8' }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - uses: actions/cache@v4
+        with:
+          path: .m2/repository
+          key: ${{ runner.os }}-m2-${{ hashFiles('backend/pom.xml') }}
+
+      - name: '阶段6 打包'
+        working-directory: backend
+        run: mvn -B -DskipTests package
+
+      - name: '阶段7 冒烟 E2E（scripts/test_api.py）'
+        env:
+          CHAINSIP_DB_HOST: 127.0.0.1
+          CHAINSIP_DB_PORT: '3306'
+          CHAINSIP_DB_PASSWORD: 'change-me'
+          # 链未就绪时后端仍能启动，链相关接口返回 503，脚本需容忍该分支
+          CHAINSIP_CHAIN_ENABLED: 'true'
+        run: |
+          cd backend
+          nohup java -jar target/chainsip-backend.jar > app.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8080/api/chain/status > /dev/null && break
+            sleep 3
+          done
+          python ../scripts/test_api.py http://127.0.0.1:8080 || {
+            echo "E2E 失败，打印后端日志尾部"; tail -100 app.log; exit 1; }
+
+      - name: '阶段8 归档制品'
+        uses: actions/upload-artifact@v4
+        with:
+          name: chainsip-backend-${{ github.sha }}
+          retention-days: 30
+          path: backend/target/chainsip-backend.jar
+
+  # ---------------------------------------------------------------- 阶段 9-10
+  deploy:
+    name: '部署'
+    runs-on: ubuntu-latest
+    needs: package
+    if: github.event_name != 'pull_request'
+    environment:
+      # prod 环境在仓库设置里绑定审批人；dev/test 无需审批
+      name: ${{ startsWith(github.ref, 'refs/tags/v') && 'prod' || 'dev' }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: chainsip-backend-${{ github.sha }} }
+
+      - name: '发布到目标机'
+        run: |
+          VERSION=1.0.0-$(echo ${{ github.sha }} | cut -c1-7)
+          echo "发布 $VERSION 到 ${{ vars.DEPLOY_HOST }}"
+          # 落地方式：上传 jar -> 切换软链 -> 重启服务（保留上一版用于回滚）
+          # 示例（目标机需预置 /opt/chainsip/releases 与 systemd unit）:
+          #   scp chainsip-backend.jar ${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }}:/opt/chainsip/releases/$VERSION.jar
+          #   ssh ... "ln -sfn /opt/chainsip/releases/$VERSION.jar /opt/chainsip/current.jar && sudo systemctl restart chainsip"
+          # 敏感项一律走 Secrets：CHAINSIP_ADMIN_PRIVATE_KEY / CHAINSIP_DB_PASSWORD / JWT / master-key
+          echo "请在目标环境补齐发布脚本后再启用本步骤"
+
+      - name: '阶段10 发布后验证'
+        run: |
+          # 探活 + 重跑 E2E；失败则回滚到上一版 jar 并重启
+          echo "探活 /api/chain/status 与关键只读接口，失败自动回滚"

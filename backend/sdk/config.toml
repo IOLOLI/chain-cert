@@ -1,0 +1,55 @@
+# ============================================================================
+# FISCO BCOS 2.x Java SDK configuration  (SDK 2.10.1 -> chain 2.11.0)
+#
+# NOTE 1: keep this file ASCII-only. The SDK reads it with the platform default
+# charset; on Chinese Windows (GBK/936) a UTF-8 file with Chinese comments can
+# make the TOML parser fail ("parse Config ... failed"). Explanations live in
+# README.md.
+#
+# NOTE 2: this is the 2.x layout, and it is NOT the same as 3.x.
+#   3.x had  [network] defaultGroup = "group0"  and peers = [...]
+#   2.x has NO defaultGroup in the config file at all -- the group id is chosen
+#   in Java via BcosSDK.getClient(groupId), so it lives in application.yml as
+#   chainsip.chain.group-id (default 1).
+#
+# Where the certs come from: build_chain.sh writes an SDK cert set under
+#   <chain>/nodes/127.0.0.1/sdk/ca.crt | sdk.crt | sdk.key
+# Copy those three files into the conf/ directory next to this file.
+# (deploy/setup-wsl-2x.sh does this automatically for the 2.x chain.)
+#
+# peers = node channel port (default 20200), NOT the p2p port (30300) and NOT
+# the jsonrpc port (8545).
+#
+# NOTE 3: every numeric value in this file MUST be quoted. The 2.x parser reads
+# each key through ConfigProperty.getValue(...) which returns a String and casts
+# the raw TOML value to String, so an unquoted `maxBlockingQueueSize = 102400`
+# blows up with "ClassCastException: java.lang.Long cannot be cast to
+# java.lang.String" and surfaces only as the very unhelpful
+# "parse Config ... failed".
+# ============================================================================
+
+[cryptoMaterial]
+# certificate directory, relative to this file
+certPath = "conf"
+# 0 = ECDSA (secp256k1), 1 = SM (guomi). The rest of the backend derives
+# addresses with secp256k1, so keep this at 0.
+cryptoType = "0"
+
+[network]
+# node channel endpoints
+# WSL2 的 IP 每次重启都会变（当前 <WSL_HOST>），写死公网风格 IP 迟早失效；
+# Windows 对 WSL2 有 localhost 转发，127.0.0.1 直达节点 channel 端口，重启也不变。
+peers = ["127.0.0.1:20200"]
+
+[account]
+# local account keystore dir (unused by this backend: institution keys are
+# stored AES-GCM encrypted in the database instead)
+keyStoreDir = "account"
+accountFileFormat = "pem"
+
+[threadPool]
+# 2.x names these differently from 3.x: there is no `threadPoolSize`, the
+# channel and receipt pools are configured separately.
+channelProcessorThreadSize = "16"
+receiptProcessorThreadSize = "16"
+maxBlockingQueueSize = "102400"

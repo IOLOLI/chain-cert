@@ -1,0 +1,86 @@
+# 构建产物与本地依赖
+target/
+node_modules/
+dist/
+
+# 本地 Maven 仓库（后端构建写入）
+.m2/
+
+# 链相关：证书私钥与原生库，绝不能提交
+backend/sdk/conf/*.key
+backend/sdk/native/
+*.crt.local
+# 任何位置的 PEM 私钥都不进仓库（例如 sdk-regulator/sdk.key 这种监管节点副本）
+*.key
+# 监管节点 SDK 证书目录（本地副本，地址与端口因环境而异）
+sdk-regulator/
+
+# 本地私有配置（含 ADMIN 机构私钥，绝不提交）
+backend/config/
+
+# 节点与镜像提取的中间产物
+deploy2x/.registry-tmp/
+deploy2x/build.log
+nodes/
+
+# IDE / 系统
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 临时探测与缓存
+.probe/
+.npmcache/
+.home/
+.tmp/
+
+# 运行时日志（本地排障用，不含任何需要共享的内容）
+backend/run.log
+backend/app.log
+*.log
+
+# WorkBuddy 会话的工作目录（本地脚本与记忆，非项目产物）
+.workbuddy/
+
+# 设计检查工具的临时产物
+.taste-skill/
+
+# 部署包产物
+dist-pkg/
+
+# 节点证书/原生库的本地拷贝（链环境相关，因机器而异）
+backend/sdk/sdk/
+/sdk/
+# 旧 ABI/BIN 备份
+backend/src/main/resources/abi/abi-backup/
+
+# 编辑器临时目录 / 浏览器测试产物
+*.tmpdir/
+.ego-test/
+
+# 毕业设计论文与个人文档（个人文件，不入库）
+/ChainSIP毕业设计*.pdf
+/ChainSIP毕业设计*.docx
+/毕业设计（论文）模板.doc
+/论文检查与修改说明.md
+
+# 数据库备份（本地一次性文件）
+/chainsip_backup_*.sql
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 本地启动日志
+*.err
+
+# 本地环境产物（不可提交）
+.acl-recovery/
+backend/sdk/conf/*.crt
+
+# 本地环境变量
+.env
+.env.*
+!.env.example
